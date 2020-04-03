@@ -1,104 +1,103 @@
+import datetime
+import pytz
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import math
-
+import time
+import datetime
+import warnings
 from mlxtend.image import extract_face_landmarks
 
-class Face:
-    def __init__(self, path):
-        self.path = path
-        src = cv2.imread(path, cv2.IMREAD_COLOR)
-        self.img = cv2.cvtColor(src, cv2.COLOR_BGR2RGB)
-        self.landmarks = extract_face_landmarks(self.img)
-      
-        #Individual facial features
-        self.nose_mean = np.mean(self.landmarks[[28,29,30]])
-        self.mouth_left_corner = self.landmarks[48]
-        self.mouth_right_corner = self.landmarks[54]
-        self.left_outer_eye = self.landmarks[36]
-        self.left_inner_eye = self.landmarks[39]
-        self.right_inner_eye = self.landmarks[42]
-        self.right_outer_eye = self.landmarks[45] 
-        self.left_inner_eyebrow = self.landmarks[21]
-        self.right_inner_eyebrow = self.landmarks[22]
 
-    def show_face(self):
-        fig = plt.figure(figsize=(10,5))
-        ax = plt.subplot(1,3,1)
-        plt.title("Orignal Image")
-        ax.imshow(self.img)
-        ax = plt.subplot(1,3,2)
-        plt.title("Face landmarks")
-        ax.scatter(self.landmarks[:,0],-self.landmarks[:,1])
-        ax = plt.subplot(1,3,3)
-        plt.title("Landmarks on Orignal Image")
-        img2 = self.img.copy()
+pic_info = {'Year':[],'Month':[],'Day':[],'Hour':[],'Minute':[],'Second':[],'Microsecond':[],'Timezone':[],'isWearingSpecs':''}
+df = pd.DataFrame(pic_info,columns=['Year','Month','Day','Hour','Minute','Second','Microsecond','Timezone','isWearingSpecs'])
 
-        for pos in self.landmarks:
-            img2[pos[1]-3:pos[1]+3,pos[0]-3:pos[0]+6,:]=(0,0,255) #Assiging blue pixles at position of landmarks
-        ax.imshow(img2)
-        fig.suptitle("Initial face landmarks detection")
-        plt.show()
+#If we want to append data instead of creating new datasets each time
+#df = pd.read_csv("pic_info.csv")
 
-    def face_normalization(self):
-        #We will use trigonometry to find roatation angle required to normalize the face
-        h = self.left_outer_eye[1]-self.right_outer_eye[1] #Height of the triangle
-        w = self.left_outer_eye[0]-self.right_outer_eye[0] #Width of the triangle
-        angle = math.degrees(math.atan(h/w)) #Finding tan inverse and converting to degress for angle of rotation
-        image_center = tuple(np.array(self.img.shape[1::-1])/2) 
-        rot_mat = cv2.getRotationMatrix2D(image_center, angle, 1.0) 
-        rotated_img = cv2.warpAffine(self.img, rot_mat, self.img.shape[1::-1], flags=cv2.INTER_LINEAR)
-        landmarks = extract_face_landmarks(rotated_img)
-        cropped_img = rotated_img[landmarks[24][1]:landmarks[28][1],landmarks[36][0]:landmarks[45][0]] #Area to crop
-        self.img = cropped_img
+warnings.filterwarnings('error','No face detected.')
+url = "http://192.168.43.1:8080/video"
+cap = cv2.VideoCapture(0)
+wi = 1
+ni = 1
 
-        fig = plt.figure(figsize=(5,4))
-        plt.title("Normalised Image")
-        plt.imshow(self.img)
-        plt.show()
-        #Distance from left outer eye to right outer eye
-        #eyes_distance_r = math.sqrt((self.left_outer_eye[0]-self.right_outer_eye[0])**2+(self.left_outer_eye[1]-self.right_outer_eye[1])**2)
+while True:    
+    return_value,frame = cap.read()
+    # Resize frame of video to 1/4 size for faster face recognition processing
+    small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
+    process_frame = cv2.resize(frame, (0, 0), fx=1, fy=1)
+    cv2.imshow('test',small_frame)
     
-    def edge_detection(self):
-        fig = plt.figure(figsize=(10,5))
-        edges = cv2.Canny(self.img,200,200)
-        h,w = edges.shape
-        plt.subplot(1,2,1)
-        plt.title("Orignal Image")
-        plt.imshow(self.img,cmap='gray')
-        plt.subplot(1,2,2)
-        plt.title("Edge Image")
-        plt.imshow(edges,cmap='gray')
-        fig.suptitle("Canny Filter edge detection")
-        plt.show()
+    # Hit 'q' on the keyboard to quit!
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+    
+    img = cv2.cvtColor(process_frame, cv2.COLOR_BGR2RGB)
+    try:
+        landmarks = extract_face_landmarks(img)
+        
+        #Individual facial features
+        left_outer_eye = landmarks[36]
+        right_outer_eye = landmarks[45]
 
-        #Extracting coordinates from edges
-        indices = np.where(edges != [0])
-        coordinates =  list(zip(indices[1], indices[0]))
+        #We will use trigonometry to find roatation angle required to normalize the face
+        h = left_outer_eye[1]-right_outer_eye[1] #Height of the triangle
+        w = left_outer_eye[0]-right_outer_eye[0] #Width of the triangle
+        angle = math.degrees(math.atan(h/w)) #Finding tan inverse and converting to degress for angle of rotation
+        image_center = tuple(np.array(img.shape[1::-1])/2) 
+        rot_mat = cv2.getRotationMatrix2D(image_center, angle, 1.0) 
+        rotated_img = cv2.warpAffine(img, rot_mat, img.shape[1::-1], flags=cv2.INTER_LINEAR)
+        landmarks = extract_face_landmarks(rotated_img)
 
-        #Declaring iterator and list
-        i = 0
-        count = []
+    except UserWarning:
+        continue 
+    img = rotated_img[landmarks[24][1]:landmarks[28][1],landmarks[36][0]:landmarks[45][0]] #Area to crop
 
-        for x in range(int(w*0.45),int(w*0.55)):
-            count.append(0)
-            for y in range(0,h):
-                if (x,y) in coordinates:
-                    count[i] += 1
-            i += 1
-        print(count)
+    edges = cv2.Canny(img,100,100)
+    h,w = edges.shape
 
-        flag = 1
-        for x in count:
-            if x<2:
-                flag = 0
-                print("\nSpectacles not Detected")
-                break
-        if flag==1:
-            print("\nThe image has spectacles")
+    #Extracting coordinates from edges
+    indices = np.where(edges != [0])
+    coordinates =  list(zip(indices[1], indices[0]))
 
-obj1 = Face('image_path')
-obj1.show_face()
-obj1.face_normalization()
-obj1.edge_detection()
+    #Declaring iterator and list
+    i = 0
+    count = []
+
+    for x in range(int(w*0.45),int(w*0.55)):
+        count.append(0)
+        for y in range(0,h):
+            if (x,y) in coordinates:
+                count[i] += 1
+        i += 1
+    #print(count)
+    flag = 1
+    
+    cur_time = datetime.datetime.now(tz=pytz.timezone('Asia/Kolkata'))
+    for x in count:
+        if x<2:
+            flag = 0
+            print("Spectacles not Detected\n")
+            df = df.append({'Year':cur_time.year,'Month':cur_time.month,'Day':cur_time.day,'Hour':cur_time.hour,
+            'Minute':cur_time.minute,'Second':cur_time.second,'Microsecond':cur_time.microsecond,'Timezone':cur_time.tzinfo,
+            'isWearingSpecs':'No'}, ignore_index = True)
+            if(ni==21):
+                ni=1
+            cv2.imwrite(filename = 'NotWearing\ '+str(ni)+'.jpg', img = frame)
+            ni+=1
+            break
+    if (flag==1):
+        print("The image has spectacles\n")
+        df = df.append({'Year':cur_time.year,'Month':cur_time.month,'Day':cur_time.day,'Hour':cur_time.hour,
+        'Minute':cur_time.minute,'Second':cur_time.second,'Microsecond':cur_time.microsecond,'Timezone':cur_time.tzinfo,
+        'isWearingSpecs':'Yes'}, ignore_index = True)
+        if(wi==21):
+            wi=1
+        cv2.imwrite(filename = 'Wearing\ '+str(wi)+'.jpg', img = frame)
+        wi+=1
+    #time.sleep(1)
+df.to_csv(r'picture_info.csv', index = False, header = True)
+print(df)
+cap.release()
+cv2.destroyAllWindows()
